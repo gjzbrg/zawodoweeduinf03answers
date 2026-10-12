@@ -107,10 +107,21 @@
       .find(button => button.textContent.trim() === String(number));
   }
 
-   function getAnswerButton(answerId) {
-     return [...document.querySelectorAll('button.v2-answer')]
-       .find(button => button.dataset.answer === String(answerId));
-   }
+   function getAnswerLabel(element) {
+    const ariaLabel = (element.getAttribute('aria-label') || '').trim();
+    const ariaMatch = ariaLabel.match(/Odpowiedź\s*([A-D])/i);
+    if (ariaMatch) return ariaMatch[1].toUpperCase();
+
+    const text = (element.textContent || '').trim();
+    const textMatch = text.match(/^([A-D])\./i);
+    return textMatch ? textMatch[1].toUpperCase() : null;
+  }
+
+  function getAnswerButton(answerLabel) {
+    const target = String(answerLabel || '').trim().toUpperCase();
+    return [...document.querySelectorAll('.v2-answer[role="button"], .v2-answer')]
+      .find(element => getAnswerLabel(element) === target);
+  }
 
   function normalizeText(value) {
     return value.replace(/\s+/g, ' ').trim().toLocaleLowerCase('pl');
@@ -130,7 +141,7 @@
     if (!detailResponse.ok) throw new Error(`Nie udało się otworzyć karty pytania ${number}.`);
     const html = await detailResponse.text();
     const detailDocument = new DOMParser().parseFromString(html, 'text/html');
-    const correctButtons = [...detailDocument.querySelectorAll('button.v2-answer[data-is-correct="true"]')];
+    const correctButtons = [...detailDocument.querySelectorAll('.v2-answer[data-is-correct="true"], button.v2-answer[data-is-correct="true"]')];
     if (correctButtons.length !== 1) {
       throw new Error(`Karta pytania ${number} nie wskazuje jednej poprawnej odpowiedzi.`);
     }
@@ -155,7 +166,7 @@
          const row = document.createElement('li');
         try {
           const { answer, slug } = await fetchCorrectAnswer(number);
-          correctAnswers.set(number, answer.original_number);
+          correctAnswers.set(number, answer);
           row.textContent = `Pytanie ${number}: ${answer.label} (slug: ${slug})`;
         } catch (error) {
           row.textContent = `Pytanie ${number}: ${error.message}`;
@@ -211,16 +222,16 @@
         questionButton.click();
         await waitFor(() => getQuestionNumber() === number);
 
-         const correctAnswerId = correctAnswers.get(number);
-         let chosenAnswerId = correctAnswerId;
+        const correctAnswer = correctAnswers.get(number);
+        let chosenAnswerLabel = correctAnswer?.label;
         if (!correctQuestions.has(number)) {
-           const wrongAnswers = [...document.querySelectorAll('button.v2-answer')]
-             .filter(button => button.dataset.answer !== String(correctAnswerId));
-           chosenAnswerId = wrongAnswers[randomIndex(wrongAnswers.length)]?.dataset.answer;
+          const answerOptions = [...document.querySelectorAll('.v2-answer[role="button"], .v2-answer')];
+          const wrongAnswers = answerOptions.filter(element => getAnswerLabel(element) !== correctAnswer?.label);
+          chosenAnswerLabel = getAnswerLabel(wrongAnswers[randomIndex(wrongAnswers.length)]);
         }
 
-         const answerButton = getAnswerButton(chosenAnswerId);
-         if (!answerButton) throw new Error(`Nie znaleziono odpowiedzi do pytania ${number}.`);
+        const answerButton = getAnswerButton(chosenAnswerLabel);
+        if (!answerButton) throw new Error(`Nie znaleziono odpowiedzi do pytania ${number}.`);
         const wasAnswered = questionButton.dataset.answered === 'true';
         questionButton.dataset.answered = 'false';
         questionButton.classList.remove('is-answered');
